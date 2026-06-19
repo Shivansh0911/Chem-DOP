@@ -4,7 +4,7 @@ import {
   Tooltip, ReferenceLine, ResponsiveContainer, Label,
 } from 'recharts'
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL ?? 'https://chem-dop.onrender.com'
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null

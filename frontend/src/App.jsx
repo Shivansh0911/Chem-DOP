@@ -5,7 +5,7 @@ import TitrationCurve  from './components/TitrationCurve.jsx'
 import ModelComparison from './components/ModelComparison.jsx'
 import AminoAcidTable  from './components/AminoAcidTable.jsx'
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL ?? 'https://chem-dop.onrender.com'
 
 export default function App() {
   const [result,     setResult]     = useState(null)
