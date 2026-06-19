@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+env/
+
+# Trained model files (auto-generated on Render startup)
+backend/models/
+
+# Cached CSV downloads (re-downloaded on server)
+backend/dataPeptidePIs.csv
+backend/dataProteinPIs.csv
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
