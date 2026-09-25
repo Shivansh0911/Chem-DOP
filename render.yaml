@@ -19,8 +19,6 @@ services:
         sync: false            # set this by hand in the dashboard
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
-      - key: VITE_API_URL
-        value: ""              # empty => the UI calls its own origin
       - key: PYTHON_VERSION
         value: "3.12.5"
       - key: NODE_VERSION

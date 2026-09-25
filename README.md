@@ -142,8 +142,9 @@ npm install
 npm run dev
 ```
 
-App at `http://localhost:5173`. Set `VITE_API_URL=http://localhost:8000` (or leave it unset to hit
-the deployed backend).
+App at `http://localhost:5173`. No environment variable needed: Vite proxies the API paths to
+`localhost:8000` in dev, and in production the frontend calls its own origin. Set `VITE_API_URL`
+only when you want to point at some other backend.
 
 ---
 
