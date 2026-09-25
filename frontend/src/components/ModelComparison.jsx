@@ -3,17 +3,17 @@ import React from 'react'
 const MODEL_INFO = {
   rf: {
     label: 'Random Forest',
-    desc: '300 trees, ensemble average. Also provides the 90% confidence interval.',
+    desc: '150 bagged trees learning the correction to the pKa-table baseline.',
     color: 'indigo',
   },
   gb: {
     label: 'Gradient Boosting',
-    desc: '200 boosting rounds, lr=0.05. Typically lowest test error.',
+    desc: '300 boosting rounds, lr=0.05. Sequential error correction.',
     color: 'violet',
   },
   ridge: {
     label: 'Ridge Regression',
-    desc: 'Linear baseline (α=1.0). Fast and interpretable.',
+    desc: 'Linear baseline (α=1.0) on the same residual target.',
     color: 'slate',
   },
 }
@@ -98,7 +98,8 @@ export default function ModelComparison({ result, metrics }) {
     <div className="card">
       <h2 className="text-base font-semibold text-lab-700 mb-1">Model Comparison</h2>
       <p className="text-xs text-gray-400 mb-4">
-        All three models trained on ~7,500 experimental pI measurements. Lower RMSE = better.
+        All three predict the correction to the physics baseline, trained on ~8,400 experimental
+        measurements. Lower RMSE = better; the app reports the winner.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

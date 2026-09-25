@@ -1,0 +1,27 @@
+# Single Render service: builds the React app and serves it from FastAPI.
+# One URL for the UI and the API — no second host, no CORS, no Netlify needed.
+#
+# Deploy: Render dashboard → New → Blueprint → pick this repo.
+# Then set GROQ_API_KEY in the service's Environment tab (it is NOT in git).
+services:
+  - type: web
+    name: pi-predictor
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: |
+      cd frontend && npm ci && npm run build
+      cd ../backend && pip install -r requirements.txt && python model.py
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false            # set this by hand in the dashboard
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: VITE_API_URL
+        value: ""              # empty => the UI calls its own origin
+      - key: PYTHON_VERSION
+        value: "3.12.5"
+      - key: NODE_VERSION
+        value: "20.14.0"

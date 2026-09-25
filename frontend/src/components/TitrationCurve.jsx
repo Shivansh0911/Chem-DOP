@@ -4,7 +4,7 @@ import {
   Tooltip, ReferenceLine, ResponsiveContainer, Label,
 } from 'recharts'
 
-const API = import.meta.env.VITE_API_URL ?? 'https://chem-dop.onrender.com'
+import { API } from '../api.js'
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -110,6 +110,7 @@ export default function TitrationCurve({ sequence, predictedPI }) {
               stroke="#6366f1"
               strokeWidth={2}
               dot={false}
+              isAnimationActive={false}
               activeDot={{ r: 4, fill: '#6366f1' }}
             />
           </LineChart>

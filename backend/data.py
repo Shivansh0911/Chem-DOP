@@ -146,6 +146,67 @@ _PKA_SIDE_CHAINS = {
 _PKA_NTERM = 8.0   # approximate alpha-amino
 _PKA_CTERM = 3.1   # approximate alpha-carboxyl
 
+# ---------------------------------------------------------------------------
+# Classical pI calculators — published pKa sets
+# ---------------------------------------------------------------------------
+# Each classical "pI calculator" is just Henderson-Hasselbalch with a different
+# pKa table.  They disagree with each other (and with experiment) by up to
+# ~1 pH unit.  We compute the pI under every set ourselves, so the exact same
+# code runs at training time and at prediction time — the ML model then learns
+# *when to trust which table* and how to correct their shared biases.
+# Order: Nterm, Cterm, D, E, C, Y, H, K, R   (source: Kozlowski, Biol Direct 2016)
+PKA_SETS = {
+    "emboss":    (8.6,   3.6,   3.9,   4.1,   8.5,   10.1,   6.5,   10.8,   12.5),
+    "dtaselect": (8.0,   3.1,   4.4,   4.4,   8.5,   10.0,   6.5,   10.0,   12.0),
+    "solomon":   (9.6,   2.4,   3.9,   4.3,   8.3,   10.1,   6.0,   10.5,   12.5),
+    "sillero":   (8.2,   3.2,   4.0,   4.5,   9.0,   10.0,   6.4,   10.4,   12.0),
+    "rodwell":   (8.0,   3.1,   3.68,  4.25,  8.33,  10.07,  6.0,   11.5,   11.5),
+    "lehninger": (9.69,  2.34,  3.86,  4.25,  8.33,  10.0,   6.0,   10.5,   12.4),
+    "grimsley":  (7.7,   3.3,   3.5,   4.2,   6.8,   10.3,   6.6,   10.5,   12.04),
+    "bjellqvist":(7.5,   3.55,  4.05,  4.45,  9.0,   10.0,   5.98,  10.0,   12.0),
+    "ipc":       (9.564, 2.383, 3.887, 4.317, 8.297, 10.071, 6.018, 10.517, 12.503),
+}
+_ACID_AAS = "DECY"
+_BASE_AAS = "HKR"
+
+
+def _charge_from_counts(counts: dict, pH: float, pka: tuple) -> float:
+    """Net charge given residue counts and a pKa tuple (see PKA_SETS order)."""
+    n_t, c_t, d, e, c, y, h, k, r = pka
+    pos = 1.0 / (1.0 + 10 ** (pH - n_t))
+    pos += counts["H"] / (1.0 + 10 ** (pH - h))
+    pos += counts["K"] / (1.0 + 10 ** (pH - k))
+    pos += counts["R"] / (1.0 + 10 ** (pH - r))
+    neg = 1.0 / (1.0 + 10 ** (c_t - pH))
+    neg += counts["D"] / (1.0 + 10 ** (d - pH))
+    neg += counts["E"] / (1.0 + 10 ** (e - pH))
+    neg += counts["C"] / (1.0 + 10 ** (c - pH))
+    neg += counts["Y"] / (1.0 + 10 ** (y - pH))
+    return pos - neg
+
+
+def classical_pIs(sequence: str) -> dict:
+    """pI of `sequence` under every pKa set in PKA_SETS (bisection, 0–14)."""
+    seq = sequence.upper().strip()
+    counts = {aa: seq.count(aa) for aa in _ACID_AAS + _BASE_AAS}
+    out = {}
+    for name, pka in PKA_SETS.items():
+        lo, hi = 0.0, 14.0
+        for _ in range(40):
+            mid = (lo + hi) / 2.0
+            if _charge_from_counts(counts, mid, pka) > 0:
+                lo = mid
+            else:
+                hi = mid
+        out[name] = round((lo + hi) / 2.0, 3)
+    return out
+
+
+def charge_at_pH(sequence: str, pH: float, pka_set: str = "ipc") -> float:
+    seq = sequence.upper().strip()
+    counts = {aa: seq.count(aa) for aa in _ACID_AAS + _BASE_AAS}
+    return round(_charge_from_counts(counts, pH, PKA_SETS[pka_set]), 3)
+
 
 def extract_features(sequence: str) -> dict:
     """
@@ -176,6 +237,9 @@ def extract_features(sequence: str) -> dict:
                        seq.count("Q") + seq.count("C") + seq.count("G")) / n
     charge_proxy    = basic - acidic
 
+    pis = classical_pIs(seq)
+    pi_vals = list(pis.values())
+
     return {
         "length":               n,
         "log_length":           math.log(n + 1),
@@ -186,33 +250,31 @@ def extract_features(sequence: str) -> dict:
         "polar_uncharged_frac": polar_uncharged,
         "charge_proxy":         charge_proxy,
         **{f"aa_{aa}": aa_fracs[aa] for aa in sorted(VALID_AAS)},
+        # Absolute counts of ionisable residues — for short peptides one extra
+        # Lys matters far more than its fraction suggests.
+        **{f"n_{aa}": seq.count(aa) for aa in _ACID_AAS + _BASE_AAS},
+        # Terminal residues shift the terminal-group pKa values
+        "nterm_charged":        1.0 if seq[0] in "DEKRH" else 0.0,
+        "cterm_charged":        1.0 if seq[-1] in "DEKRH" else 0.0,
+        # Classical calculators (computed live, never read from the CSV)
+        **{f"pI_{k}": v for k, v in pis.items()},
+        "pI_classical_mean":    float(np.mean(pi_vals)),
+        "pI_classical_spread":  float(np.std(pi_vals)),
+        "charge_pH7":           charge_at_pH(seq, 7.0),
     }
-
-# Algorithm columns present in both CSVs (used as extra features if available)
-ALGO_COLUMNS = ["bjell", "expasy", "solomon", "rodwell"]
 
 def build_feature_matrix(df: pd.DataFrame):
     """
     Build X (feature matrix) and y (target vector) from the combined dataset.
-    Algorithm-predicted columns are appended when present.
+
+    NOTE: the CSVs also ship pre-computed calculator columns (bjell, expasy, …).
+    We deliberately do NOT use them — they are unavailable for a new user
+    sequence, so a model trained on them silently breaks at prediction time.
+    Every feature here comes from extract_features(), the same function used
+    for live predictions.
     Returns (X: np.ndarray, y: np.ndarray, feature_names: list[str])
     """
-    base_features = [extract_features(seq) for seq in df["sequence"]]
-    X_base = pd.DataFrame(base_features)
-
-    algo_frames = []
-    for col in ALGO_COLUMNS:
-        if col in df.columns:
-            algo_frames.append(df[col].astype(float).rename(f"algo_{col}"))
-
-    if algo_frames:
-        X = pd.concat([X_base] + algo_frames, axis=1)
-    else:
-        X = X_base
-
-    # Fill any NaN in algo columns (some rows may be missing) with median
-    X = X.fillna(X.median(numeric_only=True))
-
+    X = pd.DataFrame([extract_features(seq) for seq in df["sequence"]])
     y = df["piexp"].values.astype(float)
     return X.values, y, list(X.columns)
 

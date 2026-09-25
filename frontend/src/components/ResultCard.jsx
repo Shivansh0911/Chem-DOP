@@ -24,13 +24,13 @@ function ConfidenceBar({ low, high, best }) {
     <div className="mt-2">
       <div className="flex justify-between text-xs text-gray-400 mb-1">
         <span>pH 0</span>
-        <span className="text-lab-600 font-semibold">90% CI: {low.toFixed(2)} – {high.toFixed(2)}</span>
+        <span className="text-lab-600 font-semibold">90% interval: {low.toFixed(2)} – {high.toFixed(2)}</span>
         <span>pH 14</span>
       </div>
       <div className="relative h-4 bg-gray-100 rounded-full overflow-visible">
         {/* CI band */}
         <div
-          className="absolute top-0 h-full bg-lab-200 rounded-full"
+          className="absolute top-0 h-full bg-lab-300 rounded-full min-w-[4px]"
           style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
         />
         {/* Best prediction dot */}
@@ -39,14 +39,18 @@ function ConfidenceBar({ low, high, best }) {
                      bg-lab-600 border-2 border-white shadow"
           style={{ left: `calc(${dotPct}% - 8px)` }}
         />
-        {/* Label */}
-        <span
-          className="absolute -top-5 text-xs font-bold text-lab-700"
-          style={{ left: `calc(${dotPct}% - 16px)` }}
-        >
-          {best.toFixed(2)}
-        </span>
       </div>
+    </div>
+  )
+}
+
+function Piece({ label, value, strong, tone }) {
+  return (
+    <div className="text-center px-2">
+      <div className={`font-mono font-bold ${strong ? 'text-xl text-lab-700' : `text-base ${tone ?? 'text-gray-600'}`}`}>
+        {value}
+      </div>
+      <div className="text-[10px] text-gray-400">{label}</div>
     </div>
   )
 }
@@ -67,7 +71,7 @@ export default function ResultCard({ result }) {
   const {
     sequence, length, best_prediction, confidence_low, confidence_high,
     charge_class, physics_estimate, is_single_aa, known_pI, prediction_error,
-    features,
+    features, base_pI, ml_correction, in_domain,
   } = result
 
   return (
@@ -106,6 +110,27 @@ export default function ResultCard({ result }) {
           </div>
           <div className="text-xs text-gray-400 mt-1">{length} residue{length !== 1 ? 's' : ''}</div>
         </div>
+      </div>
+
+      {/* Physics → ML decomposition: the core story of the project */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+        <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-2">
+          How this number was built
+        </div>
+        <div className="flex items-center gap-2 text-sm flex-wrap">
+          <Piece label="Physics (Rodwell pKa)" value={base_pI?.toFixed(2)} />
+          <span className="text-gray-300 text-lg">+</span>
+          <Piece label="Learned correction" value={`${ml_correction >= 0 ? '+' : ''}${ml_correction?.toFixed(2)}`}
+            tone={Math.abs(ml_correction) > 0.3 ? 'text-lab-700' : 'text-gray-500'} />
+          <span className="text-gray-300 text-lg">=</span>
+          <Piece label="Final prediction" value={best_prediction.toFixed(2)} strong />
+        </div>
+        {!in_domain && (
+          <p className="text-xs text-amber-700 mt-2">
+            Outside the experimental domain (the data came from pH 3–10 focusing strips), so the learned
+            correction is faded out and the interval is widened — this is mostly the physics answer.
+          </p>
+        )}
       </div>
 
       {/* Confidence range bar */}
