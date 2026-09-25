@@ -47,7 +47,7 @@ RIDGE_PATH   = os.path.join(MODELS_DIR, "ridge.pkl")
 SCALER_PATH  = os.path.join(MODELS_DIR, "scaler.pkl")
 META_PATH    = os.path.join(MODELS_DIR, "meta.pkl")   # feature names + metrics
 
-FEATURE_VERSION = 6   # bump when extract_features() changes → forces retrain
+FEATURE_VERSION = 7   # bump when extract_features() changes → forces retrain
 
 # Residual learning: the models predict the *correction* to this classical
 # calculator rather than pI from scratch.  Physics carries the prediction
@@ -89,6 +89,20 @@ def _make_ridge():
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
+
+def _weight(seq_len: int, base_pI: float, pI_domain: list, lo_len: int) -> float:
+    """
+    1.0 = fully trust the ML correction, 0.0 = pure physics.
+
+    The domain is passed in so training can score the test set through exactly
+    the gate the server applies, rather than reporting an ungated error.
+    """
+    if seq_len < lo_len:
+        return 0.0
+    lo_pI, hi_pI = pI_domain
+    dist = max(lo_pI - base_pI, base_pI - hi_pI, 0.0)
+    return max(0.0, 1.0 - dist / DOMAIN_FADE)
+
 
 def _metrics(y_true, y_pred) -> dict:
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
@@ -133,17 +147,30 @@ def train():
     print("  Fitting Ridge...")
     ridge.fit(X_train_scaled, resid_train)
 
-    metrics = {
-        "rf":    _metrics(y_test, base_test + rf.predict(X_test)),
-        "gb":    _metrics(y_test, base_test + gb.predict(X_test)),
-        "ridge": _metrics(y_test, base_test + ridge.predict(X_test_scaled)),
+    # Metrics must describe the pipeline we actually serve, so the same
+    # applicability gate used at prediction time is applied here. Reporting the
+    # ungated error would flatter the model by about 0.02 RMSE and would not be
+    # the number a user's prediction is drawn from.
+    len_col   = feature_names.index("length")
+    pI_domain = [round(float(np.percentile(X[:, base_col], 1)), 2),
+                 round(float(np.percentile(X[:, base_col], 99)), 2)]
+    lo_len    = int(X[:, len_col].min())
+    w_test = np.array([
+        _weight(int(n), float(b), pI_domain, lo_len)
+        for n, b in zip(X_test[:, len_col], base_test)
+    ])
+
+    gated = {
+        "rf":    base_test + w_test * rf.predict(X_test),
+        "gb":    base_test + w_test * gb.predict(X_test),
+        "ridge": base_test + w_test * ridge.predict(X_test_scaled),
     }
+    metrics = {k: _metrics(y_test, v) for k, v in gated.items()}
 
     # Split-conformal 90% interval: the 90th percentile of absolute test error.
     # "For 9 in 10 unseen sequences the true pI lies within ± this value."
     best_key = min(metrics, key=lambda k: metrics[k]["rmse"])
-    best_test = base_test + {"rf": rf.predict(X_test), "gb": gb.predict(X_test),
-                             "ridge": ridge.predict(X_test_scaled)}[best_key]
+    best_test = gated[best_key]
     conformal_q90 = float(np.quantile(np.abs(y_test - best_test), 0.9))
 
     # Classical baselines on the *same* test rows
@@ -176,8 +203,7 @@ def train():
         "importance":      importance,
         "n_train":         int(len(X_train)),
         "n_test":          int(len(X_test)),
-        "pI_domain":       [round(float(np.percentile(X[:, base_col], 1)), 2),
-                            round(float(np.percentile(X[:, base_col], 99)), 2)],
+        "pI_domain":       pI_domain,
         "train_len_range": [int(X[:, feature_names.index("length")].min()),
                             int(X[:, feature_names.index("length")].max())],
     }, META_PATH)
@@ -231,13 +257,8 @@ def _base(X: np.ndarray) -> np.ndarray:
 
 
 def _domain_weight(seq_len: int, base_pI: float) -> float:
-    """1.0 = fully trust the ML correction, 0.0 = pure physics."""
-    lo_len, _ = _meta["train_len_range"]
-    if seq_len < lo_len:
-        return 0.0
-    lo_pI, hi_pI = _meta["pI_domain"]
-    dist = max(lo_pI - base_pI, base_pI - hi_pI, 0.0)
-    return max(0.0, 1.0 - dist / DOMAIN_FADE)
+    """The gate as the loaded model applies it."""
+    return _weight(seq_len, base_pI, _meta["pI_domain"], _meta["train_len_range"][0])
 
 
 def _half_width(w):
