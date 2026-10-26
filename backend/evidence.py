@@ -69,6 +69,36 @@ def _build():
     _rows, _index = rows, index
 
 
+_coverage_cache: dict | None = None
+
+
+def coverage() -> dict:
+    """
+    How the 90% interval actually performs across every held-out row.
+
+    The examples table below spreads its sample across the pI range on purpose,
+    which over-weights the sparse extremes where the model is weakest. Quoting
+    only that sample would undersell the calibration, so the page shows this
+    figure beside it: the honest number over all held-out rows.
+    """
+    global _coverage_cache
+    if _coverage_cache is not None:
+        return _coverage_cache
+    _build()
+    test = [r for r in _rows if r["used_for"] == "held-out test"]
+    preds = ml.predict_many([r["sequence"] for r in test])
+    inside = sum(1 for r, p in zip(test, preds)
+                 if p["ci_low"] <= r["measured_pI"] <= p["ci_high"])
+    errs = [abs(p["pI"] - r["measured_pI"]) for r, p in zip(test, preds)]
+    _coverage_cache = {
+        "rows": len(test),
+        "inside": inside,
+        "percent": round(inside / len(test) * 100, 1),
+        "mean_error": round(float(np.mean(errs)), 3),
+    }
+    return _coverage_cache
+
+
 def summary() -> dict:
     """Provenance plus the numbers behind every claim the app makes."""
     _build()
@@ -157,4 +187,8 @@ def examples(n: int = 12, seed: int = 7) -> dict:
         "rows": out,
         "inside_interval": f"{covered} of {len(out)}",
         "mean_error": round(float(np.mean([r['error'] for r in out])), 3),
+        # Spreading the sample across the range deliberately includes the sparse
+        # extremes, so this small table reads worse than the model really is.
+        # The full figure goes with it so the comparison is honest.
+        "overall": coverage(),
     }

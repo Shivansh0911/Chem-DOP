@@ -11,6 +11,8 @@ import { getJSON } from '../api.js'
 // The pKa constants come from the server, so this view can never disagree
 // with the titration curve or the physics baseline.
 
+const MAX_TILES = 400
+
 const CLASS_STYLE = {
   acidic:    { dot: 'bg-red-500',    label: 'Acidic (D, E)' },
   basic:     { dot: 'bg-blue-500',   label: 'Basic (K, R, H)' },
@@ -43,13 +45,17 @@ export default function SequenceViewer({ sequence, pI }) {
   const [hover, setHover] = useState(null)
   const [error, setError] = useState('')
 
+  // Past a few hundred residues the tiles stop being readable and the row
+  // would dominate the page, so the viewer steps aside rather than failing.
+  const tooLong = sequence && sequence.length > MAX_TILES
+
   useEffect(() => {
     setData(null); setError(''); setHover(null)
-    if (!sequence) return
+    if (!sequence || tooLong) return
     getJSON(`/residues?sequence=${encodeURIComponent(sequence)}`)
       .then(d => { setData(d); setPH(7.4) })
       .catch(e => setError(e.message))
-  }, [sequence])
+  }, [sequence, tooLong])
 
   const live = useMemo(() => {
     if (!data) return null
@@ -82,6 +88,14 @@ export default function SequenceViewer({ sequence, pI }) {
         Each tile is one amino acid. Move the slider and watch them charge and discharge —
         blue is positive, red is negative. The pI is the pH where the two cancel out exactly.
       </p>
+
+      {tooLong && (
+        <p className="text-sm text-gray-500">
+          This one is {sequence.length.toLocaleString()} residues long. Laying every residue out as a
+          tile only helps up to about {MAX_TILES}, so the titration curve below is the better view for
+          a protein this size — it shows the same charge behaviour across the whole pH range.
+        </p>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

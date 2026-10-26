@@ -356,7 +356,7 @@ def protocol(sequence: str = Query(..., min_length=1)):
 
 @app.get("/mutation-scan")
 def mutation_scan(sequence: str = Query(..., min_length=2),
-                  top: int = Query(15, ge=5, le=40)):
+                  top: int = Query(15, ge=1, le=40)):
     _require_ready()
     try:
         return labtools.mutation_scan(_clean_sequence(sequence, max_len=labtools.MAX_SCAN_LEN), top)

@@ -156,10 +156,23 @@ export default function Evidence({ onInspect }) {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-gray-500 mt-3">
-                  Average error on this sample: <b className="font-mono">{examples.mean_error}</b> ·
-                  Inside our stated range: <b>{examples.inside_interval}</b>
-                </p>
+                <div className="text-xs text-gray-500 mt-3 space-y-1">
+                  <p>
+                    On this sample of {examples.rows.length}: average error{' '}
+                    <b className="font-mono">{examples.mean_error}</b>, inside the stated range{' '}
+                    <b>{examples.inside_interval}</b>.
+                  </p>
+                  {examples.overall && (
+                    <p>
+                      Across <b>all {examples.overall.rows.toLocaleString()}</b> held-out peptides:
+                      average error <b className="font-mono">{examples.overall.mean_error}</b>, inside
+                      the range <b className="font-mono">{examples.overall.percent}%</b>. The small
+                      table above is deliberately spread across the whole pI range, including the
+                      sparse extremes where the model is weakest, so it reads a little worse than the
+                      model really is.
+                    </p>
+                  )}
+                </div>
               </>
             )}
           </div>
