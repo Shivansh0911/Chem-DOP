@@ -39,6 +39,7 @@ from data import (
     lookup_amino_acid,
     titration_curve,
     physics_pI_estimate,
+    residue_profile,
     VALID_AAS,
     classical_pIs,
 )
@@ -333,6 +334,12 @@ def batch(req: BatchRequest):
     if req.as_csv:
         out["csv"] = labtools.to_csv(result["rows"])
     return out
+
+
+@app.get("/residues")
+def residues(sequence: str = Query(..., min_length=1)):
+    """Every letter decoded, with the pKa values the charge maths uses."""
+    return residue_profile(_clean_sequence(sequence, max_len=400))
 
 
 @app.get("/charge")

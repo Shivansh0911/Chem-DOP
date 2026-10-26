@@ -5,6 +5,8 @@ import TitrationCurve    from './components/TitrationCurve.jsx'
 import ModelComparison   from './components/ModelComparison.jsx'
 import AminoAcidTable    from './components/AminoAcidTable.jsx'
 import AminoAcidLegend   from './components/AminoAcidLegend.jsx'
+import SequenceViewer    from './components/SequenceViewer.jsx'
+import PIScale           from './components/PIScale.jsx'
 import CalculatorSpread  from './components/CalculatorSpread.jsx'
 import Protocol          from './components/Protocol.jsx'
 import LabInsight        from './components/LabInsight.jsx'
@@ -151,6 +153,9 @@ export default function App() {
 
             {result && (
               <>
+                <SequenceViewer sequence={result.sequence} pI={result.best_prediction} />
+                <PIScale result={result} />
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="space-y-6">
                     <ResultCard result={result} />

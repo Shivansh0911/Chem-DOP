@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+﻿import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // In production FastAPI serves this app, so the frontend calls its own origin
@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react'
 const API_PATHS = [
   '/health', '/predict', '/amino-acids', '/titration-curve',
   '/model-metrics', '/model-info', '/ai',
-  '/evidence', '/batch', '/charge', '/protocol', '/mutation-scan',
+  '/evidence', '/batch', '/charge', '/protocol', '/mutation-scan', '/residues',
 ]
 
 export default defineConfig({

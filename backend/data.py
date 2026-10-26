@@ -202,7 +202,30 @@ def classical_pIs(sequence: str) -> dict:
     return out
 
 
-def charge_at_pH(sequence: str, pH: float, pka_set: str = "ipc") -> float:
+# The one pKa table the whole app charges with. Everything that reports a
+# charge — the titration curve, the charge readout, the purification protocol,
+# the sequence viewer and the model's own charge feature — reads from here.
+CHARGE_PKA_SET = "ipc"
+
+# The same table, unpacked per residue, for anything that needs to show its
+# working rather than just the total. Order in PKA_SETS: Nterm, Cterm, D, E,
+# C, Y, H, K, R.
+def _side_chain_pkas(pka_set: str = CHARGE_PKA_SET) -> dict:
+    v = PKA_SETS[pka_set]
+    return {
+        "D": ("acid", v[2]), "E": ("acid", v[3]),
+        "C": ("acid", v[4]), "Y": ("acid", v[5]),
+        "H": ("base", v[6]), "K": ("base", v[7]), "R": ("base", v[8]),
+    }
+
+
+def terminal_pkas(pka_set: str = CHARGE_PKA_SET) -> tuple:
+    """(N-terminus pKa, C-terminus pKa) for the table we charge with."""
+    v = PKA_SETS[pka_set]
+    return v[0], v[1]
+
+
+def charge_at_pH(sequence: str, pH: float, pka_set: str = CHARGE_PKA_SET) -> float:
     seq = sequence.upper().strip()
     counts = {aa: seq.count(aa) for aa in _ACID_AAS + _BASE_AAS}
     return round(_charge_from_counts(counts, pH, PKA_SETS[pka_set]), 3)
@@ -291,24 +314,13 @@ def compute_charge(sequence: str, pH: float) -> float:
     For an acidic group (neutral at low pH, deprotonated/negative at high pH):
         charge contribution = -1 / (1 + 10^(pKa - pH))
     Summation over all ionisable sites gives the net charge.
+
+    This reads its pKa values from CHARGE_PKA_SET, the same table charge_at_pH
+    uses, so the titration curve, the charge readout, the purification protocol
+    and the model's own charge feature can never disagree about the same
+    peptide at the same pH.
     """
-    seq = sequence.upper().strip()
-    charge = 0.0
-
-    # N-terminus (basic)
-    charge += 1.0 / (1.0 + 10 ** (pH - _PKA_NTERM))
-    # C-terminus (acidic)
-    charge -= 1.0 / (1.0 + 10 ** (_PKA_CTERM - pH))
-
-    for aa in seq:
-        if aa in _PKA_SIDE_CHAINS:
-            kind, pka = _PKA_SIDE_CHAINS[aa]
-            if kind == "base":
-                charge += 1.0 / (1.0 + 10 ** (pH - pka))
-            else:
-                charge -= 1.0 / (1.0 + 10 ** (pka - pH))
-
-    return round(charge, 4)
+    return charge_at_pH(sequence, pH)
 
 def titration_curve(sequence: str, step: float = 0.1):
     """Return list of {pH, charge} dicts from pH 0 to 14."""
@@ -331,3 +343,60 @@ def physics_pI_estimate(sequence: str) -> float:
         else:
             hi = mid
     return round((lo + hi) / 2.0, 2)
+
+
+# ---------------------------------------------------------------------------
+# Per-residue profile — what every letter in a sequence actually is
+# ---------------------------------------------------------------------------
+# The server owns the pKa values; the page does the one-line Henderson-
+# Hasselbalch arithmetic itself so a pH slider can respond instantly. Keeping
+# the constants here means the sequence viewer can never drift away from the
+# titration curve, which is drawn from these same numbers.
+
+_CLASS = {
+    **{a: "acidic" for a in "DE"},
+    **{a: "basic" for a in "KRH"},
+    **{a: "ionisable" for a in "CY"},
+    **{a: "aromatic" for a in "FW"},
+}
+
+_ROLE = {
+    "acidic":    "negative when charged — pulls the pI down",
+    "basic":     "positive when charged — pushes the pI up",
+    "ionisable": "charges only at extreme pH — shifts the pI a little",
+    "aromatic":  "no charge, but absorbs UV light, which is how you measure concentration",
+    "neutral":   "no charge — affects size and folding, not the pI",
+}
+
+
+def residue_profile(sequence: str) -> dict:
+    """Decode every letter, with the pKa the charge calculation uses."""
+    seq = sequence.upper().strip()
+    by1 = {row[1]: row for row in AMINO_ACIDS}
+    pkas = _side_chain_pkas()
+    residues = []
+    for i, c in enumerate(seq):
+        row = by1[c]
+        side = pkas.get(c)
+        cls = _CLASS.get(c, "neutral")
+        residues.append({
+            "position": i + 1,
+            "letter": c,
+            "code3": row[2],
+            "name": row[0],
+            "class": cls,
+            "role": _ROLE[cls],
+            # kind is "acid" or "base": how this group answers a change in pH
+            "kind": side[0] if side else None,
+            "pka": side[1] if side else None,
+            "hydrophobicity": row[8],
+            "mw": row[4],
+        })
+    n_pka, c_pka = terminal_pkas()
+    return {
+        "sequence": seq,
+        "residues": residues,
+        "termini": {"n_term_pka": n_pka, "c_term_pka": c_pka},
+        "counts": {k: sum(1 for r in residues if r["class"] == k)
+                   for k in ("acidic", "basic", "ionisable", "aromatic", "neutral")},
+    }
