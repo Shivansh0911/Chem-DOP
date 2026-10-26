@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react'
 const API_PATHS = [
   '/health', '/predict', '/amino-acids', '/titration-curve',
   '/model-metrics', '/model-info', '/ai',
+  '/evidence', '/batch', '/charge', '/protocol', '/mutation-scan',
 ]
 
 export default defineConfig({

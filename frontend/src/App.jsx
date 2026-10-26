@@ -4,30 +4,45 @@ import ResultCard        from './components/ResultCard.jsx'
 import TitrationCurve    from './components/TitrationCurve.jsx'
 import ModelComparison   from './components/ModelComparison.jsx'
 import AminoAcidTable    from './components/AminoAcidTable.jsx'
+import AminoAcidLegend   from './components/AminoAcidLegend.jsx'
 import CalculatorSpread  from './components/CalculatorSpread.jsx'
+import Protocol          from './components/Protocol.jsx'
 import LabInsight        from './components/LabInsight.jsx'
 import Designer          from './components/Designer.jsx'
 import Tuner             from './components/Tuner.jsx'
+import MutationScan      from './components/MutationScan.jsx'
+import BatchPanel        from './components/BatchPanel.jsx'
+import Evidence          from './components/Evidence.jsx'
 import HowItWorks        from './components/HowItWorks.jsx'
 import { API, postJSON } from './api.js'
 
 const TABS = [
-  { id: 'predict', label: 'Predict',     hint: 'sequence → pI + lab note' },
-  { id: 'design',  label: 'AI Designer', hint: 'goal → sequence' },
-  { id: 'tune',    label: 'pI Tuner',    hint: 'mutate toward a target' },
-  { id: 'how',     label: 'How it works', hint: 'benchmarks & method' },
+  { id: 'predict',  label: 'Predict',      hint: 'one sequence → pI, protocol, lab note' },
+  { id: 'batch',    label: 'Batch',        hint: 'a whole FASTA file at once' },
+  { id: 'design',   label: 'AI Designer',  hint: 'describe a peptide, get one' },
+  { id: 'tune',     label: 'pI Tuner',     hint: 'mutate toward a target pI' },
+  { id: 'evidence', label: 'Evidence',     hint: 'check every claim yourself' },
+  { id: 'how',      label: 'How it works', hint: 'method and benchmarks' },
 ]
 
+// The sequence lives in the URL so a result can be sent to a colleague.
+function readURL() {
+  const p = new URLSearchParams(window.location.search)
+  return { seq: p.get('seq') ?? '', tab: p.get('tab') ?? 'predict' }
+}
+
 export default function App() {
-  const [tab,        setTab]        = useState('predict')
+  const initial = readURL()
+  const [tab,        setTab]        = useState(TABS.some(t => t.id === initial.tab) ? initial.tab : 'predict')
   const [result,     setResult]     = useState(null)
   const [metrics,    setMetrics]    = useState(null)
   const [aminoAcids, setAminoAcids] = useState([])
   const [loading,    setLoading]    = useState(false)
   const [apiError,   setApiError]   = useState('')
-  const [modelReady, setModelReady] = useState(null)   // null=unknown, true/false
+  const [modelReady, setModelReady] = useState(null)
   const [llmReady,   setLlmReady]   = useState(false)
-  const [tunerSeed,  setTunerSeed]  = useState('')
+  const [seed,       setSeed]       = useState('')
+  const [copied,     setCopied]     = useState(false)
 
   useEffect(() => {
     fetch(`${API}/amino-acids`).then(r => r.json()).then(setAminoAcids).catch(() => {})
@@ -38,7 +53,7 @@ export default function App() {
       .then(d => { if (!d.detail) setMetrics(d) }).catch(() => {})
   }, [])
 
-  // Poll until the model finishes training (first boot on a cold Render dyno)
+  // Poll until the model finishes training (first boot on a cold server)
   useEffect(() => {
     if (modelReady !== false) return
     const id = setInterval(() => {
@@ -54,19 +69,40 @@ export default function App() {
 
   const handlePredict = useCallback(async (input) => {
     setLoading(true); setApiError('')
-    try { setResult(await postJSON('/predict', { input })) }
-    catch (e) { setApiError(e.message) }
+    try {
+      const data = await postJSON('/predict', { input })
+      setResult(data)
+      const p = new URLSearchParams(window.location.search)
+      p.set('seq', data.sequence)
+      window.history.replaceState(null, '', `?${p}`)
+    } catch (e) { setApiError(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  // Jump from a designed / mutated sequence straight into the full analysis
+  // A sequence in the URL is predicted once the backend is ready.
+  useEffect(() => {
+    if (modelReady === true && initial.seq && !result) handlePredict(initial.seq)
+  }, [modelReady]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    tab === 'predict' ? p.delete('tab') : p.set('tab', tab)
+    window.history.replaceState(null, '', p.toString() ? `?${p}` : window.location.pathname)
+  }, [tab])
+
   const inspect = useCallback((sequence) => {
     setTab('predict')
     handlePredict(sequence)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [handlePredict])
 
-  const toTuner = useCallback((sequence) => { setTunerSeed(sequence); setTab('tune') }, [])
+  const sendTo = useCallback((id, sequence) => { setSeed(sequence); setTab(id) }, [])
+
+  function copyLink() {
+    navigator.clipboard?.writeText(window.location.href).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-lab-50">
@@ -92,9 +128,7 @@ export default function App() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} title={t.hint}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition
-                ${tab === t.id
-                  ? 'border-lab-600 text-lab-700'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                ${tab === t.id ? 'border-lab-600 text-lab-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
               {t.label}
             </button>
           ))}
@@ -104,8 +138,7 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         {modelReady === false && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
-            <strong>Server waking up.</strong> The free Render instance sleeps when idle and retrains on
-            first boot (~1 minute). This page updates automatically.
+            <strong>Server waking up.</strong> The models are loading. This page updates automatically.
           </div>
         )}
 
@@ -129,22 +162,37 @@ export default function App() {
                   </div>
                 </div>
 
+                <Protocol sequence={result.sequence} />
                 <LabInsight sequence={result.sequence} llmAvailable={llmReady} />
 
-                <button onClick={() => toTuner(result.sequence)}
-                  className="text-sm px-4 py-2 rounded-lg border border-lab-300 text-lab-700 hover:bg-lab-50 font-medium">
-                  Tune this sequence toward a different pI →
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => sendTo('tune', result.sequence)}
+                    className="text-sm px-4 py-2 rounded-lg border border-lab-300 text-lab-700 hover:bg-lab-50 font-medium">
+                    Tune this toward another pI →
+                  </button>
+                  <button onClick={copyLink}
+                    className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 font-medium">
+                    {copied ? 'Link copied' : 'Copy a link to this result'}
+                  </button>
+                </div>
               </>
             )}
 
+            <AminoAcidLegend sequence={result?.sequence} />
             <AminoAcidTable aminoAcids={aminoAcids} onSelect={aa => handlePredict(aa.name)} />
           </>
         )}
 
-        {tab === 'design' && <Designer llmAvailable={llmReady} onInspect={inspect} />}
-        {tab === 'tune'   && <Tuner llmAvailable={llmReady} initialSequence={tunerSeed} onInspect={inspect} />}
-        {tab === 'how'    && <HowItWorks />}
+        {tab === 'batch'    && <BatchPanel onInspect={inspect} />}
+        {tab === 'design'   && <Designer llmAvailable={llmReady} onInspect={inspect} />}
+        {tab === 'tune'     && (
+          <div className="space-y-8">
+            <Tuner llmAvailable={llmReady} initialSequence={seed} onInspect={inspect} />
+            <MutationScan initialSequence={seed} onInspect={inspect} />
+          </div>
+        )}
+        {tab === 'evidence' && <Evidence onInspect={inspect} />}
+        {tab === 'how'      && <HowItWorks />}
 
         <footer className="text-xs text-gray-400 pt-4 border-t border-gray-200">
           Trained on ~8,400 experimental isoelectric points (Pérez-Riverol et al., <em>Bioinformatics</em> 2016).
@@ -161,8 +209,7 @@ function Pill({ ok, pending, labels }) {
   if (!text) return null
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium
-      ${pending ? 'bg-gray-100 text-gray-500'
-        : ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+      ${pending ? 'bg-gray-100 text-gray-500' : ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${ok && !pending ? 'bg-green-500' : 'bg-amber-400'}`} />
       {text}
     </span>

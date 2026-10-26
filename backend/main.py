@@ -9,6 +9,11 @@ GET  /amino-acids              → reference table of all 20 standard AAs
 GET  /titration-curve?sequence → Henderson-Hasselbalch charge vs pH data
 GET  /model-metrics            → RMSE / MAE / R² for all three models
 GET  /model-info               → metrics + classical baselines + feature importance
+GET  /evidence/*               → dataset provenance, sequence lookup, held-out examples
+POST /batch                    → many sequences at once (FASTA or plain), + CSV
+GET  /charge                   → net charge at a chosen pH
+GET  /protocol                 → buffer pH + resin, computed by rule, no LLM
+GET  /mutation-scan            → every single substitution, ranked
 POST /ai/insight               → LLM lab note grounded in model numbers
 POST /ai/design                → closed-loop LLM ⇄ ML inverse peptide design
 POST /ai/tune                  → LLM point mutations, re-scored by ML
@@ -27,6 +32,8 @@ from pydantic import BaseModel, Field
 
 import model as ml
 import llm
+import evidence
+import labtools
 from data import (
     amino_acids_as_dicts,
     lookup_amino_acid,
@@ -88,6 +95,10 @@ app.add_middleware(
 
 class PredictRequest(BaseModel):
     input: str
+
+class BatchRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=200_000)
+    as_csv: bool = False
 
 class InsightRequest(BaseModel):
     sequence: str
@@ -282,6 +293,68 @@ def ai_tune(req: TuneRequest):
     if len(seq) < 2:
         raise HTTPException(status_code=400, detail="Tuning needs a peptide of at least 2 residues.")
     return _run_llm(llm.tune, seq, req.target_pI)
+
+
+# ---------------------------------------------------------------------------
+# Evidence — so no claim in the app has to be taken on trust
+# ---------------------------------------------------------------------------
+
+@app.get("/evidence/summary")
+def evidence_summary():
+    _require_ready()
+    return evidence.summary()
+
+
+@app.get("/evidence/lookup")
+def evidence_lookup(sequence: str = Query(..., min_length=1)):
+    _require_ready()
+    return evidence.lookup(_clean_sequence(sequence))
+
+
+@app.get("/evidence/examples")
+def evidence_examples(n: int = Query(12, ge=5, le=40), seed: int = Query(7, ge=0, le=9999)):
+    _require_ready()
+    return evidence.examples(n, seed)
+
+
+# ---------------------------------------------------------------------------
+# Bench tools — deterministic, no language model anywhere below
+# ---------------------------------------------------------------------------
+
+@app.post("/batch")
+def batch(req: BatchRequest):
+    _require_ready()
+    parsed = labtools.parse_sequences(req.text)
+    if not parsed["entries"]:
+        raise HTTPException(status_code=400,
+                            detail="No valid sequences found. Paste FASTA, or one sequence per line.")
+    result = labtools.predict_batch(parsed["entries"])
+    out = {**parsed, **result}
+    if req.as_csv:
+        out["csv"] = labtools.to_csv(result["rows"])
+    return out
+
+
+@app.get("/charge")
+def charge(sequence: str = Query(..., min_length=1), pH: float = Query(..., ge=0, le=14)):
+    _require_ready()
+    return labtools.charge_report(_clean_sequence(sequence), pH)
+
+
+@app.get("/protocol")
+def protocol(sequence: str = Query(..., min_length=1)):
+    _require_ready()
+    return labtools.protocol(_clean_sequence(sequence))
+
+
+@app.get("/mutation-scan")
+def mutation_scan(sequence: str = Query(..., min_length=2),
+                  top: int = Query(15, ge=5, le=40)):
+    _require_ready()
+    try:
+        return labtools.mutation_scan(_clean_sequence(sequence, max_len=labtools.MAX_SCAN_LEN), top)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
