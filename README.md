@@ -132,6 +132,12 @@ to claim precision outside that window.
 
 ## Running locally
 
+**One command:** `.\run-local.ps1` on Windows, then open `http://localhost:8000`.
+To put that running app on a public link, `.\share.ps1` in a second terminal.
+Full instructions, troubleshooting and demo sequences: [`docs/RUN-LOCAL.md`](docs/RUN-LOCAL.md).
+
+The manual steps, if you prefer them:
+
 ### Backend
 
 ```bash
