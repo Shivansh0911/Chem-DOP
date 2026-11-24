@@ -29,14 +29,21 @@ The **isoelectric point** is the pH at which a molecule carries zero net charge.
 
 ---
 
-## The four features
+## The six tabs
+
+[**Screenshots of all of these →**](docs/screenshots/)
 
 | Tab | What it does |
 |---|---|
-| **Predict** | Sequence → pI, decomposed as `physics baseline + learned correction`, with a calibrated 90% interval, the titration curve, the three-model comparison, and all nine classical calculators plotted side by side. |
+| **Predict** | Sequence → pI, decomposed as `physics baseline + learned correction`, with a calibrated 90% interval. Alongside it: a residue-by-residue viewer whose pH slider recolours each tile as its group gains or loses a proton, the pI placed against common laboratory buffers, a rule-based purification protocol, the titration curve, the three-model comparison, and all nine classical calculators plotted side by side. |
+| **Batch** | Paste or upload a whole file — FASTA, a plain list or CSV. Everything is scored in one pass, exported as a spreadsheet, and drawn on a single pH axis for comparison. Sequences with non-standard residues are reported by name rather than dropped. |
 | **AI Designer** | "A 12-residue peptide that binds DNA and has a Trp for tracking" → numeric spec → 3 rounds of propose-and-score → final sequence. Every candidate is validated and re-scored; invalid ones are shown as rejected with the reason. |
-| **pI Tuner** | Give a sequence and a target pI; get minimal point mutations (`K2E`) with a chemical rationale and the real predicted shift for each. |
+| **pI Tuner** | Give a sequence and a target pI; get minimal point mutations (`K2E`) with a chemical rationale and the real predicted shift. Below it, an exhaustive scan of *every* single substitution — all 19 alternatives at every position — ranked, with a sensitivity bar per position. |
+| **Evidence** | The dataset, the paper and the exact files, all recomputed server-side. Look up any sequence to see whether a laboratory measured it and whether that row was used for training or held back — the split is rebuilt from the same seed the training script uses. Plus a redrawable random sample of unseen peptides. |
 | **How it works** | Live benchmark against all nine classical methods, feature importances, and the training facts. |
+
+Features 10–12 (protocol, charge at a chosen pH, mutation scan) use **no language model**,
+so the same input always gives the same output.
 
 ---
 
